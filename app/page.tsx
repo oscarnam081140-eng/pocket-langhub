@@ -1,14 +1,15 @@
 "use client"
 
-import React, { useState } from "react"
+import React, { useState, useEffect, useCallback } from "react"
 import { useSession, signIn, signOut } from "next-auth/react"
 
 interface VocabItem {
-  id: number
+  id: string
   word: string
   translation: string
   language: string
-  example?: string
+  example?: string | null
+  created_at?: string
 }
 
 const languages = [
@@ -23,13 +24,37 @@ const languages = [
 export default function PocketLangHub() {
   const { data: session, status } = useSession()
   const [selectedLang, setSelectedLang] = useState(languages[0])
-  const [vocabList, setVocabList] = useState<VocabItem[]>([
-    { id: 1, word: "สวัสดี", translation: "Hello", language: "th", example: "สวัสดีครับ" },
-  ])
+  const [vocabList, setVocabList] = useState<VocabItem[]>([])
   const [newWord, setNewWord] = useState("")
   const [newTranslation, setNewTranslation] = useState("")
   const [newExample, setNewExample] = useState("")
   const [searchTerm, setSearchTerm] = useState("")
+  const [loading, setLoading] = useState(false)
+  const [saving, setSaving] = useState(false)
+
+  const fetchVocab = useCallback(async () => {
+    if (!session?.user?.email) return
+    setLoading(true)
+    try {
+      const res = await fetch("/api/vocab")
+      if (res.ok) {
+        const data = await res.json()
+        setVocabList(data)
+      }
+    } catch (err) {
+      console.error("Failed to fetch vocab:", err)
+    } finally {
+      setLoading(false)
+    }
+  }, [session?.user?.email])
+
+  useEffect(() => {
+    if (session?.user?.email) {
+      fetchVocab()
+    } else {
+      setVocabList([])
+    }
+  }, [session?.user?.email, fetchVocab])
 
   const filteredVocab = vocabList.filter(
     (item) =>
@@ -38,26 +63,52 @@ export default function PocketLangHub() {
         item.translation.toLowerCase().includes(searchTerm.toLowerCase()))
   )
 
-  const addVocab = () => {
-    if (newWord.trim() && newTranslation.trim()) {
-      setVocabList([
-        ...vocabList,
-        {
-          id: Date.now(),
+  const addVocab = async () => {
+    if (!newWord.trim() || !newTranslation.trim() || !session) return
+    setSaving(true)
+    try {
+      const res = await fetch("/api/vocab", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
           word: newWord.trim(),
           translation: newTranslation.trim(),
           language: selectedLang.code,
-          example: newExample.trim() || undefined,
-        },
-      ])
-      setNewWord("")
-      setNewTranslation("")
-      setNewExample("")
+          example: newExample.trim() || null,
+        }),
+      })
+      if (res.ok) {
+        const newItem = await res.json()
+        setVocabList((prev) => [newItem, ...prev])
+        setNewWord("")
+        setNewTranslation("")
+        setNewExample("")
+      } else {
+        const err = await res.json()
+        alert(err.error || "Failed to add word")
+      }
+    } catch (err) {
+      console.error("Add error:", err)
+      alert("Failed to add word")
+    } finally {
+      setSaving(false)
     }
   }
 
-  const deleteVocab = (id: number) =>
-    setVocabList(vocabList.filter((item) => item.id !== id))
+  const deleteVocab = async (id: string) => {
+    if (!confirm("Delete this word?")) return
+    try {
+      const res = await fetch(`/api/vocab/${id}`, { method: "DELETE" })
+      if (res.ok) {
+        setVocabList((prev) => prev.filter((item) => item.id !== id))
+      } else {
+        alert("Failed to delete")
+      }
+    } catch (err) {
+      console.error("Delete error:", err)
+      alert("Failed to delete")
+    }
+  }
 
   if (status === "loading") {
     return (
@@ -156,9 +207,10 @@ export default function PocketLangHub() {
               </div>
               <button
                 onClick={addVocab}
-                className="mt-4 px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-medium transition-colors"
+                disabled={saving}
+                className="mt-4 px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl text-sm font-medium transition-colors"
               >
-                + Add Word
+                {saving ? "Saving..." : "+ Add Word"}
               </button>
             </div>
 
@@ -173,7 +225,9 @@ export default function PocketLangHub() {
 
             {/* Vocab List */}
             <div className="space-y-3">
-              {filteredVocab.length === 0 ? (
+              {loading ? (
+                <p className="text-center text-zinc-500 py-10">Loading your words...</p>
+              ) : filteredVocab.length === 0 ? (
                 <p className="text-center text-zinc-500 py-10">
                   No words yet. Add your first {selectedLang.name} word!
                 </p>
