@@ -26,13 +26,13 @@ function LoginForm() {
       return
     }
     if (rawError === "OAuthAccountNotLinked" || rawError === "OAuthCallback") {
-      setError("Google sign-in failed. Try again or use another Google account.")
+      setError("Sign-in failed. Try again.")
     } else if (rawError === "AccessDenied") {
-      setError("Access denied. Please try again.")
+      setError("Sign-in failed. Try again.")
     } else if (rawError === "Configuration") {
-      setError("Sign-in is misconfigured. Contact support.")
+      setError("Sign-in failed. Try again.")
     } else {
-      setError("Could not sign in. Please try again.")
+      setError("Sign-in failed. Try again.")
     }
   }, [rawError])
 
@@ -42,7 +42,7 @@ function LoginForm() {
     try {
       await signIn("google", { callbackUrl: "/" })
     } catch {
-      setError("Could not start Google sign-in. Please try again.")
+      setError("Sign-in failed. Try again.")
       setBusy(false)
     }
   }
@@ -65,13 +65,13 @@ function LoginForm() {
 
           <h1 className="text-2xl font-bold tracking-tight mb-2">Pocket LangHub</h1>
           <p className="text-zinc-500 dark:text-zinc-400 mb-8">
-            Sign in to open your vocabulary hub
+            Sign in to continue learning
           </p>
 
           {error && (
             <p
               role="alert"
-              className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300"
+              className="mb-4 text-sm text-red-600 dark:text-red-400"
             >
               {error}
             </p>
@@ -103,10 +103,6 @@ function LoginForm() {
             </svg>
             {busy ? "Redirecting…" : "Continue with Google"}
           </button>
-
-          <p className="mt-6 text-xs text-zinc-400">
-            Login required — no guest access
-          </p>
         </div>
       </div>
     </div>
