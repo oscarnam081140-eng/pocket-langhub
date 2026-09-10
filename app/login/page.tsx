@@ -1,30 +1,89 @@
 "use client"
 
-import { signIn } from "next-auth/react"
+import { Suspense, useState } from "react"
+import { signIn, useSession } from "next-auth/react"
+import { useRouter, useSearchParams } from "next/navigation"
+import { useEffect } from "react"
 
-export default function LoginPage() {
+function LoginForm() {
+  const { status } = useSession()
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const rawError = searchParams.get("error")
+
+  useEffect(() => {
+    if (status === "authenticated") {
+      router.replace("/")
+    }
+  }, [status, router])
+
+  useEffect(() => {
+    if (!rawError) {
+      setError(null)
+      return
+    }
+    if (rawError === "OAuthAccountNotLinked" || rawError === "OAuthCallback") {
+      setError("Google sign-in failed. Try again or use another Google account.")
+    } else if (rawError === "AccessDenied") {
+      setError("Access denied. Please try again.")
+    } else if (rawError === "Configuration") {
+      setError("Sign-in is misconfigured. Contact support.")
+    } else {
+      setError("Could not sign in. Please try again.")
+    }
+  }, [rawError])
+
+  const onGoogle = async () => {
+    setBusy(true)
+    setError(null)
+    try {
+      await signIn("google", { callbackUrl: "/" })
+    } catch {
+      setError("Could not start Google sign-in. Please try again.")
+      setBusy(false)
+    }
+  }
+
+  if (status === "loading" || status === "authenticated") {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-zinc-50 dark:bg-zinc-950 text-zinc-500">
+        Loading…
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 flex items-center justify-center px-4">
       <div className="w-full max-w-md">
         <div className="bg-white dark:bg-zinc-900 rounded-3xl shadow-xl border border-zinc-200 dark:border-zinc-800 p-8 text-center">
-          {/* Logo */}
           <div className="mx-auto w-16 h-16 bg-gradient-to-br from-indigo-600 via-violet-600 to-fuchsia-500 rounded-2xl flex items-center justify-center text-white text-3xl mb-6 shadow-inner">
             👜
           </div>
 
-          <h1 className="text-2xl font-bold tracking-tight mb-2">
-            Pocket LangHub
-          </h1>
+          <h1 className="text-2xl font-bold tracking-tight mb-2">Pocket LangHub</h1>
           <p className="text-zinc-500 dark:text-zinc-400 mb-8">
-            Sign in to save and sync your personal vocabulary
+            Sign in to open your vocabulary hub
           </p>
 
-          {/* Google Sign In Button */}
+          {error && (
+            <p
+              role="alert"
+              className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300"
+            >
+              {error}
+            </p>
+          )}
+
           <button
-            onClick={() => signIn("google", { callbackUrl: "/" })}
-            className="w-full flex items-center justify-center gap-3 px-6 py-3.5 bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 rounded-xl text-sm font-medium hover:bg-zinc-50 dark:hover:bg-zinc-750 transition-colors shadow-sm"
+            type="button"
+            disabled={busy}
+            onClick={onGoogle}
+            className="w-full flex items-center justify-center gap-3 px-6 py-3.5 bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 rounded-xl text-sm font-medium hover:bg-zinc-50 dark:hover:bg-zinc-750 transition-colors shadow-sm disabled:opacity-60"
           >
-            <svg className="w-5 h-5" viewBox="0 0 24 24">
+            <svg className="w-5 h-5" viewBox="0 0 24 24" aria-hidden="true">
               <path
                 fill="#4285F4"
                 d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
@@ -42,20 +101,28 @@ export default function LoginPage() {
                 d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
               />
             </svg>
-            Continue with Google
+            {busy ? "Redirecting…" : "Continue with Google"}
           </button>
 
           <p className="mt-6 text-xs text-zinc-400">
-            By signing in, you agree to our Terms of Service
+            Login required — no guest access
           </p>
         </div>
-
-        <p className="text-center mt-6 text-sm text-zinc-500">
-          <a href="/" className="hover:underline">
-            ← Back to home
-          </a>
-        </p>
       </div>
     </div>
+  )
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center bg-zinc-50 dark:bg-zinc-950 text-zinc-500">
+          Loading…
+        </div>
+      }
+    >
+      <LoginForm />
+    </Suspense>
   )
 }
