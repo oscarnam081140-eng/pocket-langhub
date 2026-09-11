@@ -2,7 +2,7 @@ import { auth } from "@/auth"
 import { supabaseAdmin } from "@/lib/supabase"
 import { NextResponse } from "next/server"
 
-// GET /api/vocab — list current user's vocabulary
+// GET /api/vocab — list current user's vocabulary (optional ?language=)
 export async function GET(request: Request) {
   const session = await auth()
   if (!session?.user?.email) {
@@ -29,20 +29,31 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
-  return NextResponse.json(data)
+  return NextResponse.json(data ?? [])
 }
 
-// POST /api/vocab — add a new word
+// POST /api/vocab — add a new word for the signed-in user only
 export async function POST(request: Request) {
   const session = await auth()
   if (!session?.user?.email) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  const body = await request.json()
+  let body: {
+    word?: string
+    translation?: string
+    language?: string
+    example?: string | null
+  }
+  try {
+    body = await request.json()
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 })
+  }
+
   const { word, translation, language, example } = body
 
-  if (!word?.trim() || !translation?.trim() || !language) {
+  if (!word?.trim() || !translation?.trim() || !language?.trim()) {
     return NextResponse.json(
       { error: "word, translation and language are required" },
       { status: 400 }
@@ -55,7 +66,7 @@ export async function POST(request: Request) {
       user_email: session.user.email,
       word: word.trim(),
       translation: translation.trim(),
-      language,
+      language: language.trim(),
       example: example?.trim() || null,
     })
     .select()
