@@ -48,6 +48,8 @@ export default function PocketLangHub() {
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [formError, setFormError] = useState<string | null>(null)
+  const [bannerError, setBannerError] = useState<string | null>(null)
 
   const fetchVocab = useCallback(async () => {
     if (!session?.user?.email) return
@@ -56,10 +58,14 @@ export default function PocketLangHub() {
       const res = await fetch("/api/vocab")
       if (res.ok) {
         const data = await res.json()
-        setVocabList(data)
+        setVocabList(Array.isArray(data) ? data : [])
+        setBannerError(null)
+      } else {
+        setBannerError("Couldn't load vocabulary. Try again.")
       }
     } catch (err) {
       console.error("Failed to fetch vocab:", err)
+      setBannerError("Couldn't load vocabulary. Try again.")
     } finally {
       setLoading(false)
     }
@@ -77,16 +83,23 @@ export default function PocketLangHub() {
     }
   }, [session?.user?.email, fetchVocab, status, router])
 
-  const filteredVocab = vocabList.filter(
+  const langVocab = vocabList.filter((item) => item.language === selectedLang.code)
+  const filteredVocab = langVocab.filter(
     (item) =>
-      item.language === selectedLang.code &&
-      (item.word.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        item.translation.toLowerCase().includes(searchTerm.toLowerCase()))
+      item.word.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      item.translation.toLowerCase().includes(searchTerm.toLowerCase())
   )
 
+  const canAdd =
+    Boolean(newWord.trim()) &&
+    Boolean(newTranslation.trim()) &&
+    Boolean(session) &&
+    !saving
+
   const addVocab = async () => {
-    if (!newWord.trim() || !newTranslation.trim() || !session) return
+    if (!canAdd) return
     setSaving(true)
+    setFormError(null)
     try {
       const res = await fetch("/api/vocab", {
         method: "POST",
@@ -105,12 +118,11 @@ export default function PocketLangHub() {
         setNewTranslation("")
         setNewExample("")
       } else {
-        const err = await res.json()
-        alert(err.error || "Failed to add word")
+        setFormError("Couldn't save. Try again.")
       }
     } catch (err) {
       console.error("Add error:", err)
-      alert("Failed to add word")
+      setFormError("Couldn't save. Try again.")
     } finally {
       setSaving(false)
     }
@@ -118,16 +130,17 @@ export default function PocketLangHub() {
 
   const deleteVocab = async (id: string) => {
     if (!confirm("Delete this word?")) return
+    setBannerError(null)
     try {
       const res = await fetch(`/api/vocab/${id}`, { method: "DELETE" })
       if (res.ok) {
         setVocabList((prev) => prev.filter((item) => item.id !== id))
       } else {
-        alert("Failed to delete")
+        setBannerError("Couldn't delete. Try again.")
       }
     } catch (err) {
       console.error("Delete error:", err)
-      alert("Failed to delete")
+      setBannerError("Couldn't delete. Try again.")
     }
   }
 
@@ -155,6 +168,12 @@ export default function PocketLangHub() {
   }
 
   const chipLabel = session.user?.email || session.user?.name || "Signed in"
+  const searchCountLabel =
+    searchTerm.trim().length === 0
+      ? `${langVocab.length} word${langVocab.length === 1 ? "" : "s"}`
+      : filteredVocab.length === 0
+        ? "No matches"
+        : `${filteredVocab.length} word${filteredVocab.length === 1 ? "" : "s"}`
 
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-50">
@@ -216,58 +235,95 @@ export default function PocketLangHub() {
             ))}
           </div>
 
+          {bannerError && (
+            <div
+              role="alert"
+              className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200"
+            >
+              {bannerError}
+            </div>
+          )}
+
           <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 p-6 shadow-sm">
             <h2 className="text-lg font-semibold mb-4">
               Add new {selectedLang.name} word
             </h2>
-            <div className="grid gap-3 sm:grid-cols-3">
-              <input
-                type="text"
-                placeholder="Word"
-                value={newWord}
-                onChange={(e) => setNewWord(e.target.value)}
-                className="px-4 py-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              />
-              <input
-                type="text"
-                placeholder="Translation"
-                value={newTranslation}
-                onChange={(e) => setNewTranslation(e.target.value)}
-                className="px-4 py-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              />
-              <input
-                type="text"
-                placeholder="Example (optional)"
-                value={newExample}
-                onChange={(e) => setNewExample(e.target.value)}
-                className="px-4 py-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              />
-            </div>
-            <button
-              type="button"
-              onClick={addVocab}
-              disabled={saving}
-              className="mt-4 px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl text-sm font-medium transition-colors"
+            <form
+              onSubmit={(e) => {
+                e.preventDefault()
+                void addVocab()
+              }}
             >
-              {saving ? "Saving..." : "+ Add Word"}
-            </button>
+              <div className="grid gap-3 sm:grid-cols-3">
+                <input
+                  type="text"
+                  placeholder="Word"
+                  value={newWord}
+                  onChange={(e) => setNewWord(e.target.value)}
+                  className="px-4 py-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+                <input
+                  type="text"
+                  placeholder="Translation"
+                  value={newTranslation}
+                  onChange={(e) => setNewTranslation(e.target.value)}
+                  className="px-4 py-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+                <input
+                  type="text"
+                  placeholder="Example (optional)"
+                  value={newExample}
+                  onChange={(e) => setNewExample(e.target.value)}
+                  className="px-4 py-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+              {formError && (
+                <p className="mt-3 text-sm text-red-600 dark:text-red-400" role="alert">
+                  {formError}
+                </p>
+              )}
+              <button
+                type="submit"
+                disabled={!canAdd}
+                className="mt-4 px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl text-sm font-medium transition-colors"
+              >
+                {saving ? "Saving..." : "+ Add Word"}
+              </button>
+            </form>
           </div>
 
-          <input
-            type="text"
-            placeholder="Search vocabulary..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full px-4 py-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-          />
+          <div>
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="Search vocabulary..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full px-4 py-2.5 pr-10 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+              {searchTerm.length > 0 && (
+                <button
+                  type="button"
+                  aria-label="Clear search"
+                  onClick={() => setSearchTerm("")}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 text-lg leading-none"
+                >
+                  ×
+                </button>
+              )}
+            </div>
+            <p className="mt-2 text-sm text-zinc-500">{searchCountLabel}</p>
+          </div>
 
           <div className="space-y-3">
             {loading ? (
               <p className="text-center text-zinc-500 py-10">Loading your words...</p>
-            ) : filteredVocab.length === 0 ? (
+            ) : langVocab.length === 0 && searchTerm.trim().length === 0 ? (
               <p className="text-center text-zinc-500 py-10">
                 No words yet. Add your first {selectedLang.name} word!
               </p>
+            ) : filteredVocab.length === 0 ? (
+              <p className="text-center text-zinc-500 py-10">No matches</p>
             ) : (
               filteredVocab.map((item) => (
                 <div
