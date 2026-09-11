@@ -1,7 +1,8 @@
 "use client"
 
 import React, { useState, useEffect, useCallback } from "react"
-import { useSession, signIn, signOut } from "next-auth/react"
+import { useSession, signOut } from "next-auth/react"
+import { useRouter } from "next/navigation"
 
 interface VocabItem {
   id: string
@@ -21,8 +22,23 @@ const languages = [
   { code: "ja", name: "Japanese", flag: "🇯🇵" },
 ]
 
+function clearClientLeftovers() {
+  if (typeof window === "undefined") return
+  try {
+    const keys: string[] = []
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i)
+      if (k && (k.startsWith("plh_") || k.includes("guest"))) keys.push(k)
+    }
+    keys.forEach((k) => localStorage.removeItem(k))
+  } catch {
+    /* ignore */
+  }
+}
+
 export default function PocketLangHub() {
   const { data: session, status } = useSession()
+  const router = useRouter()
   const [selectedLang, setSelectedLang] = useState(languages[0])
   const [vocabList, setVocabList] = useState<VocabItem[]>([])
   const [newWord, setNewWord] = useState("")
@@ -31,6 +47,7 @@ export default function PocketLangHub() {
   const [searchTerm, setSearchTerm] = useState("")
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
 
   const fetchVocab = useCallback(async () => {
     if (!session?.user?.email) return
@@ -49,12 +66,16 @@ export default function PocketLangHub() {
   }, [session?.user?.email])
 
   useEffect(() => {
+    if (status === "unauthenticated") {
+      router.replace("/login")
+      return
+    }
     if (session?.user?.email) {
       fetchVocab()
     } else {
       setVocabList([])
     }
-  }, [session?.user?.email, fetchVocab])
+  }, [session?.user?.email, fetchVocab, status, router])
 
   const filteredVocab = vocabList.filter(
     (item) =>
@@ -110,6 +131,13 @@ export default function PocketLangHub() {
     }
   }
 
+  const handleSignOut = async () => {
+    setMenuOpen(false)
+    clearClientLeftovers()
+    setVocabList([])
+    await signOut({ callbackUrl: "/login" })
+  }
+
   if (status === "loading") {
     return (
       <div className="min-h-screen flex items-center justify-center bg-zinc-50 dark:bg-zinc-950">
@@ -117,6 +145,16 @@ export default function PocketLangHub() {
       </div>
     )
   }
+
+  if (!session) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-zinc-50 dark:bg-zinc-950">
+        <div className="text-zinc-500">Redirecting to login…</div>
+      </div>
+    )
+  }
+
+  const chipLabel = session.user?.email || session.user?.name || "Signed in"
 
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-50">
@@ -134,143 +172,129 @@ export default function PocketLangHub() {
             </div>
           </div>
 
-          {session ? (
-            <div className="flex items-center gap-4">
-              <span className="text-sm hidden sm:inline">
-                Welcome, {session.user?.name}
-              </span>
-              <button
-                onClick={() => signOut()}
-                className="px-5 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-sm font-medium transition-colors"
-              >
-                Sign Out
-              </button>
-            </div>
-          ) : (
+          <div className="relative">
             <button
-              onClick={() => signIn()}
-              className="px-5 py-2 bg-zinc-900 dark:bg-white dark:text-zinc-900 text-white rounded-xl text-sm font-medium hover:opacity-90 transition-opacity"
+              type="button"
+              onClick={() => setMenuOpen((v) => !v)}
+              className="flex items-center gap-2 rounded-full bg-indigo-50 px-4 py-1.5 text-sm font-medium text-indigo-800 dark:bg-indigo-950 dark:text-indigo-200"
+              aria-label="Account menu"
             >
-              Login / Sign Up
+              <span className="h-2 w-2 rounded-full bg-indigo-500" />
+              <span className="max-w-[12rem] truncate">{chipLabel}</span>
             </button>
-          )}
+            {menuOpen && (
+              <div className="absolute right-0 mt-2 w-48 rounded-2xl border border-zinc-200 bg-white p-2 shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
+                <button
+                  type="button"
+                  onClick={handleSignOut}
+                  className="w-full rounded-xl px-3 py-2 text-left text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                >
+                  Sign out
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </header>
 
       <div className="max-w-5xl mx-auto px-6 py-8">
-        {session ? (
-          <div className="space-y-8">
-            {/* Language Selector */}
-            <div className="flex flex-wrap gap-2">
-              {languages.map((lang) => (
-                <button
-                  key={lang.code}
-                  onClick={() => setSelectedLang(lang)}
-                  className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${
-                    selectedLang.code === lang.code
-                      ? "bg-indigo-600 text-white shadow-md"
-                      : "bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 hover:border-indigo-300"
-                  }`}
-                >
-                  {lang.flag} {lang.name}
-                </button>
-              ))}
-            </div>
-
-            {/* Add Form */}
-            <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 p-6 shadow-sm">
-              <h2 className="text-lg font-semibold mb-4">
-                Add new {selectedLang.name} word
-              </h2>
-              <div className="grid gap-3 sm:grid-cols-3">
-                <input
-                  type="text"
-                  placeholder="Word"
-                  value={newWord}
-                  onChange={(e) => setNewWord(e.target.value)}
-                  className="px-4 py-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-                <input
-                  type="text"
-                  placeholder="Translation"
-                  value={newTranslation}
-                  onChange={(e) => setNewTranslation(e.target.value)}
-                  className="px-4 py-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-                <input
-                  type="text"
-                  placeholder="Example (optional)"
-                  value={newExample}
-                  onChange={(e) => setNewExample(e.target.value)}
-                  className="px-4 py-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-              </div>
+        <div className="space-y-8">
+          <div className="flex flex-wrap gap-2">
+            {languages.map((lang) => (
               <button
-                onClick={addVocab}
-                disabled={saving}
-                className="mt-4 px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl text-sm font-medium transition-colors"
+                key={lang.code}
+                type="button"
+                onClick={() => setSelectedLang(lang)}
+                className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${
+                  selectedLang.code === lang.code
+                    ? "bg-indigo-600 text-white shadow-md"
+                    : "bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 hover:border-indigo-300"
+                }`}
               >
-                {saving ? "Saving..." : "+ Add Word"}
+                {lang.flag} {lang.name}
               </button>
-            </div>
-
-            {/* Search */}
-            <input
-              type="text"
-              placeholder="Search vocabulary..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full px-4 py-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            />
-
-            {/* Vocab List */}
-            <div className="space-y-3">
-              {loading ? (
-                <p className="text-center text-zinc-500 py-10">Loading your words...</p>
-              ) : filteredVocab.length === 0 ? (
-                <p className="text-center text-zinc-500 py-10">
-                  No words yet. Add your first {selectedLang.name} word!
-                </p>
-              ) : (
-                filteredVocab.map((item) => (
-                  <div
-                    key={item.id}
-                    className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 p-5 flex items-start justify-between gap-4 shadow-sm"
-                  >
-                    <div>
-                      <div className="text-xl font-semibold">{item.word}</div>
-                      <div className="text-zinc-500 mt-1">{item.translation}</div>
-                      {item.example && (
-                        <div className="text-sm text-zinc-400 mt-2 italic">
-                          “{item.example}”
-                        </div>
-                      )}
-                    </div>
-                    <button
-                      onClick={() => deleteVocab(item.id)}
-                      className="text-red-500 hover:text-red-600 text-sm font-medium shrink-0"
-                    >
-                      Delete
-                    </button>
-                  </div>
-                ))
-              )}
-            </div>
+            ))}
           </div>
-        ) : (
-          <div className="text-center py-20">
-            <h2 className="text-3xl font-bold mb-4">Sign in to save your vocab</h2>
-            <p className="text-zinc-500 mb-8">
-              Your personal language learning hub
-            </p>
+
+          <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 p-6 shadow-sm">
+            <h2 className="text-lg font-semibold mb-4">
+              Add new {selectedLang.name} word
+            </h2>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <input
+                type="text"
+                placeholder="Word"
+                value={newWord}
+                onChange={(e) => setNewWord(e.target.value)}
+                className="px-4 py-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+              <input
+                type="text"
+                placeholder="Translation"
+                value={newTranslation}
+                onChange={(e) => setNewTranslation(e.target.value)}
+                className="px-4 py-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+              <input
+                type="text"
+                placeholder="Example (optional)"
+                value={newExample}
+                onChange={(e) => setNewExample(e.target.value)}
+                className="px-4 py-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
             <button
-              onClick={() => signIn()}
-              className="px-8 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-medium transition-colors"
+              type="button"
+              onClick={addVocab}
+              disabled={saving}
+              className="mt-4 px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl text-sm font-medium transition-colors"
             >
-              Login with Google
+              {saving ? "Saving..." : "+ Add Word"}
             </button>
           </div>
-        )}
+
+          <input
+            type="text"
+            placeholder="Search vocabulary..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full px-4 py-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          />
+
+          <div className="space-y-3">
+            {loading ? (
+              <p className="text-center text-zinc-500 py-10">Loading your words...</p>
+            ) : filteredVocab.length === 0 ? (
+              <p className="text-center text-zinc-500 py-10">
+                No words yet. Add your first {selectedLang.name} word!
+              </p>
+            ) : (
+              filteredVocab.map((item) => (
+                <div
+                  key={item.id}
+                  className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 p-5 flex items-start justify-between gap-4 shadow-sm"
+                >
+                  <div>
+                    <div className="text-xl font-semibold">{item.word}</div>
+                    <div className="text-zinc-500 mt-1">{item.translation}</div>
+                    {item.example && (
+                      <div className="text-sm text-zinc-400 mt-2 italic">
+                        “{item.example}”
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => deleteVocab(item.id)}
+                    className="text-red-500 hover:text-red-600 text-sm font-medium shrink-0"
+                  >
+                    Delete
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
       </div>
     </div>
   )
