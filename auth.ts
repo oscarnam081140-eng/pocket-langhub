@@ -13,7 +13,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   },
   trustHost: true,
   callbacks: {
+    async jwt({ token }) {
+      // token.sub is the stable Auth.js / Google subject id
+      return token
+    },
     async session({ session, token }) {
+      if (session.user && token.sub) {
+        session.user.id = token.sub
+      }
       return session
     },
   },
